@@ -268,6 +268,18 @@ async def update_params_with_load_from_db_fields(
                 if field not in params or not params[field]:
                     continue
 
+                # DEBUG: Log what we're trying to load
+                logger.info("=== DEBUG load_from_db ===")
+                logger.info(f"Field: {field}")
+                logger.info(f"Param value: {params[field]}")
+                logger.info(f"Param type: {type(params[field])}")
+                if isinstance(params[field], str):
+                    logger.info(f"Param length: {len(params[field])}")
+                    preview_limit = 50
+                    preview = params[field][:preview_limit] if len(params[field]) > preview_limit else params[field]
+                    logger.info(f"Param preview: {preview}")
+                logger.info("=== END DEBUG ===")
+
                 try:
                     key = await custom_component.get_variable(name=params[field], field=field, session=session)
                 except ValueError as e:

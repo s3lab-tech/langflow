@@ -176,7 +176,15 @@ class DatabaseVariableService(VariableService, Service):
             )
             raise TypeError(msg)
 
-        # we decrypt the value
+        # For Generic type, try to decrypt but fallback to plaintext if it fails
+        if variable.type == GENERIC_TYPE:
+            try:
+                return auth_utils.decrypt_api_key(variable.value, settings_service=self.settings_service)
+            except Exception:  # noqa: BLE001
+                # Assume plaintext if decryption fails
+                return variable.value
+
+        # For Credential type, always decrypt
         return auth_utils.decrypt_api_key(variable.value, settings_service=self.settings_service)
 
     async def get_all(self, user_id: UUID | str, session: AsyncSession) -> list[VariableRead]:

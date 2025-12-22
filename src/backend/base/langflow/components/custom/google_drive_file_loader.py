@@ -17,10 +17,10 @@ REQUEST_TIMEOUT = 30  # seconds
 HTTP_NOT_FOUND = 404
 
 
-class GoogleDriveLoader(Component):
+class GoogleDriveFileLoader(Component):
     """Load files from Google Drive using Service Account."""
 
-    display_name = "Google Drive Loader"
+    display_name = "Google Drive File Loader"
     description = "Load files from Google Drive using Service Account"
 
     inputs = [
@@ -46,7 +46,7 @@ class GoogleDriveLoader(Component):
     ]
 
     outputs = [
-        Output(display_name="Content", name="content", method="load_file"),
+        Output(display_name="Message", name="message", method="load_file"),
     ]
 
     def get_access_token(self, service_account_info: dict) -> str:
@@ -79,8 +79,8 @@ class GoogleDriveLoader(Component):
         response.raise_for_status()
         return response.json()["access_token"]
 
-    def load_file(self) -> Data | Message:
-        """Load a file from Google Drive."""
+    def load_file(self) -> Message:
+        """Load a file from Google Drive and return as Message."""
         # Validate inputs
         if not self.service_account_json or not self.service_account_json.strip():
             msg = "Service Account JSON is empty. Please provide the JSON key content."
@@ -170,16 +170,24 @@ class GoogleDriveLoader(Component):
         # Output based on selected type
         output_type = getattr(self, "output_type", "Message (for LLM)")
 
-        if output_type == "Message (for LLM)" and is_image:
-            # Save image to temp file for Message
-            ext = mime_type.split("/")[-1] if "/" in mime_type else "jpg"
-            temp_path = Path(tempfile.gettempdir()) / f"gdrive_{self.file_id}_{int(time.time())}.{ext}"
-            temp_path.write_bytes(raw_content)
-            logger.info(f"Image saved to temp file: {temp_path}")
+        if output_type == "Message (for LLM)":
+            # Always return Message for this option
+            if is_image:
+                # Save image to temp file for Message
+                ext = mime_type.split("/")[-1] if "/" in mime_type else "jpg"
+                temp_path = Path(tempfile.gettempdir()) / f"gdrive_{self.file_id}_{int(time.time())}.{ext}"
+                temp_path.write_bytes(raw_content)
+                logger.info(f"Image saved to temp file: {temp_path}")
 
+                return Message(
+                    text=f"Image loaded from Google Drive: {file_name}",
+                    files=[str(temp_path)],
+                    sender="Google Drive",
+                    sender_name="Google Drive Loader",
+                )
+            # Non-image files - return content as Message
             return Message(
-                text=f"Image loaded from Google Drive: {file_name}",
-                files=[str(temp_path)],
+                text=content or f"File loaded from Google Drive: {file_name}",
                 sender="Google Drive",
                 sender_name="Google Drive Loader",
             )
