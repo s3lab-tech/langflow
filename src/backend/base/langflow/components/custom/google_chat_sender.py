@@ -9,7 +9,6 @@ from loguru import logger
 
 from langflow.custom import Component
 from langflow.io import BoolInput, HandleInput, MessageTextInput, Output, SecretStrInput
-from langflow.schema import Data
 from langflow.schema.message import Message
 
 # Constants
@@ -24,19 +23,16 @@ class GoogleChatSender(Component):
     where support operators can monitor conversations.
 
     Typical flow:
-    Chat Input → Thread Key Generator → Google Chat Sender
-                        │
-                        └── (thread_key stored in Firestore,
-                             auto-looked up by session_id)
+    Chat Input → Google Chat Sender
 
     Features:
-    - Auto-looks up thread_key from Firestore using session_id
-    - No need to connect Thread Key Generator output
+    - Uses session_id directly as thread_key
     - Groups all messages from same session in one Google Chat thread
+    - No Firestore lookup needed for thread_key
     """
 
     display_name = "Google Chat Sender"
-    description = "Send messages to Google Chat. Auto-looks up thread_key from Firestore."
+    description = "Send messages to Google Chat. Uses session_id as thread_key."
     icon = "MessageSquare"
 
     # Class-level cache: thread_key -> thread_name mapping
@@ -69,13 +65,6 @@ class GoogleChatSender(Component):
             value="Customer",
         ),
         MessageTextInput(
-            name="thread_keys_collection",
-            display_name="Thread Keys Collection",
-            info="Firestore collection where Thread Key Generator stores keys",
-            value="thread_keys",
-            advanced=True,
-        ),
-        MessageTextInput(
             name="thread_name",
             display_name="Thread Name (Full)",
             info="Full thread name (e.g., spaces/xxx/threads/yyy). Override auto-lookup.",
@@ -92,23 +81,8 @@ class GoogleChatSender(Component):
     ]
 
     outputs = [
-        Output(display_name="Result", name="result", method="send_message"),
-        Output(display_name="Thread Name Output", name="thread_name_output", method="get_thread_name"),
+        Output(display_name="Message", name="message_output", method="send_message"),
     ]
-
-    def _get_firestore_client(self, service_account_info: dict):
-        """Create Firestore client."""
-        try:
-            from google.cloud import firestore
-        except ImportError as e:
-            msg = "google-cloud-firestore is not installed"
-            raise ImportError(msg) from e
-
-        credentials = service_account.Credentials.from_service_account_info(
-            service_account_info,
-        )
-        project_id = service_account_info.get("project_id")
-        return firestore.Client(project=project_id, credentials=credentials)
 
     def _get_session_id(self) -> str:
         """Get session_id from message or flow context."""
@@ -124,30 +98,16 @@ class GoogleChatSender(Component):
 
         return session_id.strip() if session_id else ""
 
-    def _get_thread_key_from_firestore(self, service_account_info: dict) -> str:
-        """Look up thread_key from Firestore using session_id."""
+    def _get_thread_key(self) -> str:
+        """Get thread_key from session_id (use session_id directly as thread_key)."""
         session_id = self._get_session_id()
 
         if not session_id:
-            logger.warning("No session_id found, cannot look up thread_key")
+            logger.warning("No session_id found, cannot create thread_key")
             return ""
 
-        try:
-            firestore_client = self._get_firestore_client(service_account_info)
-            collection = self.thread_keys_collection or "thread_keys"
-            doc_ref = firestore_client.collection(collection).document(session_id)
-            doc = doc_ref.get()
-
-            if doc.exists:
-                thread_key = doc.to_dict().get("thread_key", "")
-                if thread_key:
-                    logger.info(f"Found thread_key from Firestore: {thread_key}")
-                    return thread_key
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Failed to look up thread_key: {e}")
-
-        logger.warning(f"No thread_key found for session: {session_id[:8]}...")
-        return ""
+        logger.info(f"Using session_id as thread_key: {session_id}")
+        return session_id
 
     def _get_access_token(self, service_account_info: dict) -> str:
         """Get access token for Google Chat API."""
@@ -175,8 +135,8 @@ class GoogleChatSender(Component):
         sender = self.sender_name or "Unknown"
         return f"*{sender}:*\n{content}"
 
-    def send_message(self) -> Data:
-        """Send message to Google Chat space."""
+    def send_message(self) -> Message:
+        """Send message to Google Chat space and pass through the original message."""
         logger.info("=== Google Chat Sender: Starting ===")
         start_time = time.time()
 
@@ -200,12 +160,12 @@ class GoogleChatSender(Component):
             msg = f"Invalid Service Account JSON: {e}"
             raise ValueError(msg) from e
 
-        logger.debug(f"Service Account: {service_account_info.get('client_email')}")
+        # logger.debug(f"Service Account: {service_account_info.get('client_email')}")
 
         # Get access token
-        logger.debug("Getting access token...")
+        # logger.debug("Getting access token...")
         access_token = self._get_access_token(service_account_info)
-        logger.debug(f"Access token obtained in {time.time() - start_time:.2f}s")
+        # logger.debug(f"Access token obtained in {time.time() - start_time:.2f}s")
 
         # Build request
         space_id = self.space_id.strip()
@@ -221,7 +181,7 @@ class GoogleChatSender(Component):
 
         # Format message
         message_text = self._format_message()
-        logger.debug(f"Message length: {len(message_text)} chars")
+        # logger.debug(f"Message length: {len(message_text)} chars")
 
         payload = {
             "text": message_text,
@@ -231,8 +191,8 @@ class GoogleChatSender(Component):
         thread_name_input = getattr(self, "thread_name", "")
         thread_name_input = thread_name_input.strip() if thread_name_input else ""
 
-        # Auto-lookup thread_key from Firestore
-        thread_key = self._get_thread_key_from_firestore(service_account_info)
+        # Get thread_key (use session_id directly)
+        thread_key = self._get_thread_key()
 
         # Build cache key (space + thread_key)
         cache_key = f"{space_id}:{thread_key}" if thread_key else ""
@@ -241,26 +201,26 @@ class GoogleChatSender(Component):
             # Use explicit thread name (highest priority)
             payload["thread"] = {"name": thread_name_input}
             url += "?messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
-            logger.info(f"Using explicit thread name: {thread_name_input}")
+            # logger.info(f"Using explicit thread name: {thread_name_input}")
         elif cache_key and cache_key in GoogleChatSender._thread_cache:
             # Use cached thread name (most reliable for subsequent messages)
             cached_name = GoogleChatSender._thread_cache[cache_key]
             payload["thread"] = {"name": cached_name}
             url += "?messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
-            logger.info(f"Using cached thread name: {cached_name} (key: {thread_key})")
+            # logger.info(f"Using cached thread name: {cached_name} (key: {thread_key})")
         elif thread_key:
             # Use thread key (first message with this key)
             payload["thread"] = {"threadKey": thread_key}
             url += "?messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
-            logger.info(f"Using thread key (first message): {thread_key}")
+            # logger.info(f"Using thread key (first message): {thread_key}")
         else:
             logger.info("No thread specified - creating new thread")
 
         # Send request
-        logger.info(f"Sending to: {space_id}")
-        logger.info(f"URL: {url}")
-        logger.info(f"Payload thread: {payload.get('thread', 'None')}")
-        send_start = time.time()
+        # logger.info(f"Sending to: {space_id}")
+        # logger.info(f"URL: {url}")
+        # logger.info(f"Payload thread: {payload.get('thread', 'None')}")
+        time.time()
 
         try:
             response = requests.post(
@@ -277,12 +237,12 @@ class GoogleChatSender(Component):
             raise
 
         result = response.json()
-        logger.info(f"Message sent in {time.time() - send_start:.2f}s")
-        logger.info(f"Message name: {result.get('name')}")
+        # logger.info(f"Message sent in {time.time() - send_start:.2f}s")
+        # logger.info(f"Message name: {result.get('name')}")
 
         # Extract thread name for future replies
         thread_name_result = result.get("thread", {}).get("name", "")
-        thread_key_used = result.get("thread", {}).get("threadKey", "")
+        result.get("thread", {}).get("threadKey", "")
         self._thread_name = thread_name_result
 
         # Cache thread name for future messages with same thread_key
@@ -290,23 +250,13 @@ class GoogleChatSender(Component):
             GoogleChatSender._thread_cache[cache_key] = thread_name_result
             logger.info(f"Cached thread: {cache_key} -> {thread_name_result}")
 
-        logger.info(f"Thread name: {thread_name_result}")
-        logger.info(f"Thread key used: {thread_key_used}")
-        logger.info(f"Cache size: {len(GoogleChatSender._thread_cache)}")
+        # logger.info(f"Thread name: {thread_name_result}")
+        # logger.info(f"Thread key used: {thread_key_used}")
+        # logger.info(f"Cache size: {len(GoogleChatSender._thread_cache)}")
+
+        logger.info(f"return: {self.message_input}")
+
         logger.info(f"=== Google Chat Sender: Complete in {time.time() - start_time:.2f}s ===")
 
-        return Data(
-            text="Message sent to Google Chat",
-            data={
-                "message_name": result.get("name"),
-                "thread_name": thread_name_result,
-                "space": space_id,
-                "create_time": result.get("createTime"),
-                "success": True,
-            },
-        )
-
-    def get_thread_name(self) -> Message:
-        """Return the thread name for this conversation."""
-        thread_name = getattr(self, "_thread_name", "")
-        return Message(text=thread_name)
+        # Pass through the original message
+        return self.message_input
