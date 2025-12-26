@@ -65,6 +65,8 @@ class MessageInspector(Component):
         """Inspect the message and log its attributes."""
         logger.info("=== Message Inspector: Starting ===")
 
+        logger.info(f"message_input: {self.message_input}")
+
         # Type and basic info
         # logger.info(f"Type: {type(self.message_input)}")
         # logger.info(f"Class: {self.message_input.__class__.__name__}")
@@ -114,12 +116,12 @@ class MessageInspector(Component):
 
         # All attributes (for reference)
         # logger.info("\n--- All Attributes ---")
-        [attr for attr in dir(self.message_input) if not attr.startswith("_")]
+        # all_attrs = [attr for attr in dir(self.message_input) if not attr.startswith("_")]
         # logger.info(f"Available attributes: {all_attrs}")
 
         # Normalize message if enabled
         if self.normalize:
-            logger.info("--- Normalizing Message ---")
+            # logger.info("--- Normalizing Message ---")
 
             # Ensure text exists
             if not hasattr(self.message_input, "text") or not self.message_input.text:
@@ -157,15 +159,15 @@ class MessageInspector(Component):
                 logger.warning(f"Missing 'timestamp' field - setting to current time: {current_time}")
                 self.message_input.timestamp = current_time
 
-            logger.info("Normalization complete")
-            logger.info(f"Final text: {self.message_input.text[:100]}...")
-            logger.info(f"Final sender: {self.message_input.sender}")
-            logger.info(f"Final sender_name: {self.message_input.sender_name}")
-            logger.info(f"Final session_id: {self.message_input.session_id}")
-            logger.info(f"Final timestamp: {self.message_input.timestamp}")
+            #logger.info("Normalization complete")
+            #logger.info(f"Final text: {self.message_input.text[:100]}...")
+            #logger.info(f"Final sender: {self.message_input.sender}")
+            #logger.info(f"Final sender_name: {self.message_input.sender_name}")
+            #logger.info(f"Final session_id: {self.message_input.session_id}")
+            #logger.info(f"Final timestamp: {self.message_input.timestamp}")
 
         logger.info(f"return: {self.message_input}")
         logger.info("=== Message Inspector: Complete ===")
 
-        # Return normalized message
+        # Return message with only essential fields
         return self.message_input
