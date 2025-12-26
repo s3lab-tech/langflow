@@ -159,12 +159,12 @@ class MessageInspector(Component):
                 logger.warning(f"Missing 'timestamp' field - setting to current time: {current_time}")
                 self.message_input.timestamp = current_time
 
-            #logger.info("Normalization complete")
-            #logger.info(f"Final text: {self.message_input.text[:100]}...")
-            #logger.info(f"Final sender: {self.message_input.sender}")
-            #logger.info(f"Final sender_name: {self.message_input.sender_name}")
-            #logger.info(f"Final session_id: {self.message_input.session_id}")
-            #logger.info(f"Final timestamp: {self.message_input.timestamp}")
+            # logger.info("Normalization complete")
+            # logger.info(f"Final text: {self.message_input.text[:100]}...")
+            # logger.info(f"Final sender: {self.message_input.sender}")
+            # logger.info(f"Final sender_name: {self.message_input.sender_name}")
+            # logger.info(f"Final session_id: {self.message_input.session_id}")
+            # logger.info(f"Final timestamp: {self.message_input.timestamp}")
 
         logger.info(f"return: {self.message_input}")
         logger.info("=== Message Inspector: Complete ===")
